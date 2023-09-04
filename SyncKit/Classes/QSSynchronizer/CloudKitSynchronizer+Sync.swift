@@ -181,7 +181,7 @@ extension CloudKitSynchronizer {
 
 extension CloudKitSynchronizer {
     
-    func fetchChanges() {
+    public func fetchChanges() {
         guard cancelSync == false else {
             finishSynchronization(error: SyncError.cancelled)
             return
