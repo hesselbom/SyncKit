@@ -344,7 +344,7 @@ extension CoreDataAdapter {
                               recordID: CKRecord.ID(recordName: entity.identifier!, zoneID: recordZoneID))
         }
         
-        var originalObject: NSManagedObject!
+        var originalObject: NSManagedObject?
         var entityDescription: NSEntityDescription!
         let objectID = self.getObjectIdentifier(for: entity)!
         let entityState = entity.entityState
@@ -352,7 +352,7 @@ extension CoreDataAdapter {
         let changedKeys = entity.changedKeysArray
         
         context.performAndWait {
-            originalObject = self.managedObject(entityName: entityType, identifier: objectID, context: context)
+            guard let originalObject = self.managedObject(entityName: entityType, identifier: objectID, context: context) else { return }
             entityDescription = NSEntityDescription.entity(forEntityName: entityType, in: context)
             let primaryKey = self.identifierFieldName(forEntity: entityType)
             let encryptedFields = self.entityEncryptedFields[entityType]
