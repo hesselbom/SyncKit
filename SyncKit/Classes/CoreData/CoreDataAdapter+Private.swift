@@ -327,8 +327,9 @@ extension CoreDataAdapter {
                     if let index = pending.firstIndex(of: entity) {
                         pending.remove(at: index)
                     }
-                    let record = self.recordToUpload(for: entity, context: self.targetContext, parentEntity: &parentEntity)
-                    recordsArray.append(record)
+                    if let record = self.recordToUpload(for: entity, context: self.targetContext, parentEntity: &parentEntity) {
+                        recordsArray.append(record)
+                    }
                     includedEntityIDs.insert(entity.identifier!)
                     entity = parentEntity
                 }
@@ -337,36 +338,41 @@ extension CoreDataAdapter {
         return recordsArray
     }
     
-    func recordToUpload(for entity: QSSyncedEntity, context: NSManagedObjectContext, parentEntity: inout QSSyncedEntity?) -> CKRecord {
+    func recordToUpload(for entity: QSSyncedEntity, context: NSManagedObjectContext, parentEntity: inout QSSyncedEntity?) -> CKRecord? {
         var record: CKRecord! = storedRecord(for: entity)
         if record == nil {
             record = CKRecord(recordType: entity.entityType!,
                               recordID: CKRecord.ID(recordName: entity.identifier!, zoneID: recordZoneID))
         }
         
-        var originalObject: NSManagedObject!
-        var entityDescription: NSEntityDescription!
-        let objectID = self.getObjectIdentifier(for: entity)!
+        var originalObject: NSManagedObject?
+        var entityDescription: NSEntityDescription?
         let entityState = entity.entityState
-        let entityType = entity.entityType!
         let changedKeys = entity.changedKeysArray
+
+        guard let objectID = self.getObjectIdentifier(for: entity), let entityType = entity.entityType else {
+            return nil
+        }
         
         context.performAndWait {
             originalObject = self.managedObject(entityName: entityType, identifier: objectID, context: context)
             entityDescription = NSEntityDescription.entity(forEntityName: entityType, in: context)
+
+            if originalObject == nil || entityDescription == nil { return }
+
             let primaryKey = self.identifierFieldName(forEntity: entityType)
             let encryptedFields = self.entityEncryptedFields[entityType]
             // Add attributes
-            entityDescription.attributesByName.forEach({ (attributeName, attributeDescription) in
+            entityDescription!.attributesByName.forEach({ (attributeName, attributeDescription) in
                 if attributeName != primaryKey &&
                     (entityState == .new || changedKeys.contains(attributeName)) {
                     
                     if let recordProcessingDelegate = recordProcessingDelegate,
-                       !recordProcessingDelegate.shouldProcessPropertyBeforeUpload(propertyName: attributeName, object: originalObject, record: record) {
+                       !recordProcessingDelegate.shouldProcessPropertyBeforeUpload(propertyName: attributeName, object: originalObject!, record: record) {
                         return
                     }
                     
-                    let value = originalObject.value(forKey: attributeName)
+                    let value = originalObject!.value(forKey: attributeName)
                     if attributeDescription.attributeType == .binaryDataAttributeType && !self.forceDataTypeInsteadOfAsset,
                         let data = value as? Data {
                         let fileURL = self.tempFileManager.store(data: data)
@@ -391,6 +397,8 @@ extension CoreDataAdapter {
                 }
             })
         }
+
+        guard let originalObject, let entityDescription else { return nil }
         
         let entityClass: AnyClass? = NSClassFromString(entityDescription.managedObjectClassName)
         var parentKey: String?
@@ -584,7 +592,9 @@ extension CoreDataAdapter {
         // Add record for this entity
         var childrenRecords = [CKRecord]()
         var parent: QSSyncedEntity?
-        childrenRecords.append(self.recordToUpload(for: entity, context: targetContext, parentEntity: &parent))
+        if let record = self.recordToUpload(for: entity, context: targetContext, parentEntity: &parent) {
+            childrenRecords.append(record)
+        }
         
         let relationships = childrenRelationships[entity.entityType!] ?? []
         for relationship in relationships {
